@@ -30,3 +30,13 @@ add_executable(takeoff_land
 target_link_libraries(takeoff_land
     MAVSDK::mavsdk
 )
+
+#---Telemetry dashboard with CSV logging
+add_executable(telemetry_dashboard
+    src/telemetry_dashboard.cpp
+    src/telemetry_monitor.cpp
+    src/csv_logger.cpp
+)
+target_link_libraries(telemetry_dashboard
+    MAVSDK::mavsdk
+)
