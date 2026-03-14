@@ -69,9 +69,9 @@ void print_dashboard(const TelemetryFrame& f, const std::string& log_file)
 {
     // Move cursor to top left
     std::cout << "\033[H"
-              << "____________________________________________________\n"
+              << "====================================================\n"
               << "   UAV GROUND STATION -- TELEMETRY DASHBOARD        \n"
-              << "____________________________________________________\n"
+              << "====================================================\n"
               << "\033[0m";
 
     std::cout << std::fixed;
@@ -83,4 +83,127 @@ void print_dashboard(const TelemetryFrame& f, const std::string& log_file)
               << "                    \n";
 
     std::cout << "\n";
+
+    // Position
+    std::cout << "  \033[1mPosition\033[0m\n"
+              << "    Lat:  " << std::setprecision(7) << f.latitude_deg << "°"
+              << "                    \n"
+              << "    Lon:  " << std::setprecision(7) << f.longitude_deg << "°"
+              << "                    \n"
+              << "    MSL:  " << std::setprecision(2) << f.absolute_altitude_m << " m"
+              << "                    \n"
+              << "    AGL:  " << std::setprecision(2) << f.relative_altitude_m << " m"
+              << "                    \n";
+
+    std::cout << "\n";
+
+    // Attitude
+    std::cout << "  \033[1mAttitude\033[0m\n"
+              << "    Roll:  " << std::setprecision(1) << std::setw(7) << f.roll_deg << "°"
+              << "    Pitch: " << std::setw(7) << f.pitch_deg << "°"
+              << "    Yaw: " << std::setw(7) << f.yaw_deg << "°"
+              << "                    \n";
+
+    std::cout << "\n";
+
+    // Battery
+    std::cout << "  \033[1mBattery\033[0m\n"
+              << "    Voltage:   " << std::setprecision(2) << f.battery_voltage_v << " V"
+              << "                    \n"
+              << "    Remaining: " << std::setprecision(0) << (f.battery_remaining * 100.0f) << "%"
+              << "                    \n";
+
+    std::cout << "\n";
+
+    // GPS
+    std::cout << "  \033[1mGPS\033[0m\n"
+              << "    Satellites: " << f.gps_num_satellites
+              << "                    \n"
+              << "    Fix type:   " << f.gps_fix_type
+              << "                    \n";
+
+    std::cout << "\n";
+
+    // Log file
+    std::cout << "  \033[1mLogging:\033[0m " << log_file
+              << "                    \n";
+
+    std::cout << "\n"
+              << "  Press Ctrl+C to stop."
+              << "                    \n";
+
+    std::cout << std::flush;
+}
+
+// -----Main-----
+int main(int argc, char* argv[])
+{
+    const std::string connection_url = 
+        (argc > 1) ? argv[1] : "udpin://0.0.0.0:14540";
+
+    // Install signal handler for Ctrl+C
+    std::signal(SIGINT, signal_handler);
+
+    std::cout << "=== UAV Ground Station -- Telemetry Dashboard ===" << std::endl;
+    std::cout << "Connecting to: " << connection_url << std::endl;
+
+    // -----Connect------
+    Mavsdk mavsdk{Mavsdk::Configuration{ComponentType::GroundStation}};
+    const ConnectionResult conn_result = mavsdk.add_any_connection(connection_url);
+
+    if (conn_result != ConnectionResult::Success) {
+        std::cerr << "Connection failed: " << conn_result << std::endl;
+        return 1;
+    }
+
+    auto system = wait_for_system(mavsdk);
+    if (!system) {
+        std::cerr << "Timed out waiting for system." << std::endl;
+        return 1;
+    }
+    std::cout << "System discovered." << std::endl;
+
+    // -----Set up telemetry and logging------
+    TelemetryMonitor monitor{system};
+    CSVLogger logger;     // Auto-generates timestamped filename
+
+    if (!logger.is_open()) {
+        std::cerr << "Failed to open log file." << std::endl;
+        return 1;
+    }
+
+    monitor.start();
+
+    // Give subscriptions a moment to receive first data
+    sleep_for(seconds(2));
+
+    // Clear screen for dashboard
+    std::cout << "\033[2J";
+
+    // ----- Main Loop------
+    // Read telemetry snapshot, log it, display it, repeat.
+    // Runs at ~2 Hz (every 500ms).
+    // 
+    while (!g_should_quit.load()) {
+        TelemetryFrame frame = monitor.get_frame();
+
+        // Log to CSV
+        logger.log(frame);
+
+        // Display dashboard
+        print_dashboard(frame, logger.filename());
+
+        // Sleep 500ms between updates
+        sleep_for(milliseconds(500));
+    }
+
+    // -----Clean Shutdown-----
+    std::cout << "\n\nShutting down..." << std::endl;
+    monitor.stop();
+    // CSVLogger destructor flushes and closes the files automatically
+
+    std::cout << "Telemetry log saved to: " << logger.filename() << std::endl;
+    std::cout << "Done." << std::endl;
+
+    return 0;
 }
