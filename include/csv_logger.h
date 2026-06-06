@@ -1,7 +1,7 @@
 // Writes TelemetryFrame data to a timestamped CSV file.
 // Thread-safe: can be called from any thread.
 
-#pragma oncoe
+#pragma once
 
 #include "telemetry_monitor.h"
 #include <fstream>
